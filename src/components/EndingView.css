@@ -5,10 +5,10 @@
   position: relative;
 }
 
-.ending-view .history-button {
+.ending-view .history-button,
+.ending-view .save-button {
   position: fixed;
   top: 1rem;
-  right: 1rem;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: #ffffff;
@@ -26,7 +26,16 @@
   border-radius: 4px;
 }
 
-.ending-view .history-button:hover {
+.ending-view .history-button {
+  right: 1rem;
+}
+
+.ending-view .save-button {
+  right: 4rem;
+}
+
+.ending-view .history-button:hover,
+.ending-view .save-button:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: #ffffff;
   transform: scale(1.1);

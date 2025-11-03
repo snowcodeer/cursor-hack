@@ -12,6 +12,7 @@ An interactive narrative game where users make choices in dynamically generated 
 - **Decision Tree Visualization**: Interactive D3.js tree showing all story paths
 - **Ending Images**: AI-generated ending images using Gemini Imagen
 - **Replay Functionality**: Replay from any decision point in the tree
+- **Save & Load Stories**: Save your stories to Convex backend and load them later
 
 ## Setup
 
@@ -39,7 +40,28 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 **Note**: The `GEMINI_API_KEY` is used server-side (no `VITE_` prefix) to avoid exposing it in the frontend. The backend server proxies Gemini API requests to avoid CORS issues.
 
-3. Start the development servers:
+3. Set up Convex backend for story saving (optional but recommended):
+```bash
+# Start Convex development backend
+npx convex dev
+```
+
+When you run `npx convex dev` for the first time, you'll be asked whether you want to:
+- **Start developing locally without an account** (no key required)
+- **Create an account** (for cloud deployment)
+
+For local development, you don't need a deploy key. The `npx convex dev` command will:
+- Create a `convex/` folder with your backend functions
+- Generate API types in `convex/_generated/`
+- Create a `.env.local` file with `VITE_CONVEX_URL`
+- Keep your functions in sync with your Convex deployment
+
+**Production Deployment**: For production deployments, you'll need a `CONVEX_DEPLOY_KEY`:
+- Go to Project Settings in the Convex Dashboard
+- Generate a Production Deploy Key
+- Set it as `CONVEX_DEPLOY_KEY` in your hosting platform (Vercel, Netlify, etc.)
+
+4. Start the development servers:
 ```bash
 # Option 1: Run both frontend and backend together
 npm run dev:all
@@ -55,6 +77,10 @@ npm run dev          # Terminal 2: Frontend (port 5173)
 
 ```
 ├── server.js            # Express backend server (proxies Gemini API)
+├── convex/              # Convex backend functions
+│   ├── schema.ts        # Database schema definition
+│   ├── stories.ts       # Story save/load mutations and queries
+│   └── _generated/      # Auto-generated API types (run `npx convex dev`)
 ├── src/
 │   ├── components/          # React components
 │   │   ├── LandingPage.tsx  # Landing page with Random/Custom buttons
@@ -78,18 +104,21 @@ npm run dev          # Terminal 2: Frontend (port 5173)
 ## Usage
 
 1. **Start a Story**: Click "Random" for a random story or "Custom" to enter your own prompt
-2. **Watch the Story**: The story streams in with fade-in animation, followed by three doors
-3. **Make Decisions**: Click a door or speak/type your decision
-4. **Continue the Journey**: Make more decisions as the story unfolds
-5. **End the Story**: Click "End Story" at any time
-6. **View Results**: See the ending image, then explore your decision tree
-7. **Replay**: Click any node in the tree to replay from that point
+2. **Load a Saved Story**: Click "Load Story" on the landing page to browse and load previously saved stories
+3. **Watch the Story**: The story streams in with fade-in animation, followed by three doors
+4. **Make Decisions**: Click a door or speak/type your decision
+5. **Continue the Journey**: Make more decisions as the story unfolds
+6. **End the Story**: Click "End Story" at any time
+7. **View Results**: See the ending image, then explore your decision tree
+8. **Save Your Story**: Click the save button (💾) in the ending view to save your story with a title
+9. **Replay**: Click any node in the tree to replay from that point
 
 ## Technologies
 
 - **React 18** with TypeScript
 - **Vite** for build tooling
 - **D3.js** for tree visualization
+- **Convex** for backend database and story persistence
 - **OpenAI GPT-4 Turbo** for story generation
 - **ElevenLabs** for voice AI
 - **Google Gemini Imagen** for image generation

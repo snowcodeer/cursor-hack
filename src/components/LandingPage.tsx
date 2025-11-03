@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useGame } from '../contexts/GameContext';
+import LoadStoryModal from './LoadStoryModal';
 import './LandingPage.css';
 
 const RANDOM_PROMPTS = [
@@ -16,6 +17,7 @@ const RANDOM_PROMPTS = [
 export default function LandingPage() {
   const { startStory } = useGame();
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [showLoadModal, setShowLoadModal] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
 
   const handleRandom = () => {
@@ -51,6 +53,9 @@ export default function LandingPage() {
           <button className="landing-button" onClick={handleCustom}>
             Custom
           </button>
+          <button className="landing-button" onClick={() => setShowLoadModal(true)}>
+            Load Story
+          </button>
         </div>
       </div>
 
@@ -77,6 +82,8 @@ export default function LandingPage() {
           </div>
         </div>
       )}
+
+      {showLoadModal && <LoadStoryModal onClose={() => setShowLoadModal(false)} />}
     </div>
   );
 }

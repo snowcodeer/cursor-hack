@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { useGame } from '../contexts/GameContext';
 import HistoryView from './HistoryView';
+import SaveStoryModal from './SaveStoryModal';
 import './EndingView.css';
 
 export default function EndingView() {
-  const { decisionTree, replayFromNode } = useGame();
+  const { decisionTree, replayFromNode, initialPrompt } = useGame();
   const [showTree, setShowTree] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const treeContainerRef = useRef<HTMLDivElement>(null);
 
@@ -337,8 +339,17 @@ export default function EndingView() {
       <button className="history-button" onClick={() => setShowHistory(true)} title="View Story History">
         📜
       </button>
+      <button className="save-button" onClick={() => setShowSaveModal(true)} title="Save Story">
+        💾
+      </button>
       
       {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}
+      {showSaveModal && (
+        <SaveStoryModal
+          onClose={() => setShowSaveModal(false)}
+          initialPrompt={initialPrompt}
+        />
+      )}
       
       {showTree && (
         <div className={`tree-container ${showTree ? 'fade-in' : ''}`}>

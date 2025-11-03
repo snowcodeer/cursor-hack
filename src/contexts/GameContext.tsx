@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GamePhase, StoryState, Decision, TreeNode, ChatMessage, GameContextType } from '../types';
 import { generateStory, generateDecisions, generateUnsettlingComment } from '../services/openaiService';
 import { generateAudioBlob } from '../services/elevenlabsService';
 import { generateImage, imageToDataUrl } from '../services/geminiService';
 import { createTreeRoot, buildTreeFromDecisions, findNodeById } from '../utils/decisionTree';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 
 const NARRATOR_VOICE_ID = 'goT3UYdM9bhm0n2lmKQx';
 
@@ -16,13 +18,16 @@ const defaultContextValue: GameContextType = {
   endingImage: null,
   isGeneratingImage: false,
   testImage: null,
+  initialPrompt: '',
   setPhase: () => {},
   startStory: async () => {},
   makeDecision: async () => {},
   endStory: async () => {},
   replayFromNode: () => {},
   generateTestImage: async () => {},
-  addChatMessage: () => {}
+  addChatMessage: () => {},
+  saveStory: async () => null,
+  loadStory: async () => {}
 };
 
 const GameContext = createContext<GameContextType>(defaultContextValue);
@@ -35,10 +40,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [endingImage, setEndingImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [testImage, setTestImage] = useState<string | null>(null);
+  const [initialPrompt, setInitialPrompt] = useState<string>('');
+  const [storyIdToLoad, setStoryIdToLoad] = useState<string | null>(null);
   
   const unsettlingCommentIntervalRef = useRef<number | null>(null);
-  const lastUnsettlingTimeRef = useRef<number>(0);
   const previousAudioUrlRef = useRef<string | null>(null);
+  
+  // Convex hooks
+  // Note: Run `npx convex dev` to generate API types
+  const saveStoryMutation = useMutation((api as any).stories.save);
+  const loadedStory = useQuery(
+    (api as any).stories.get,
+    storyIdToLoad ? { id: storyIdToLoad as any } : undefined
+  );
 
   const addChatMessage = useCallback((text: string, isSystem: boolean = false) => {
     const message: ChatMessage = {
@@ -82,6 +96,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startStory = useCallback(async (prompt: string) => {
+    setInitialPrompt(prompt);
     setPhase('story');
     setStoryState({
       currentStory: '',
@@ -332,6 +347,95 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [storyState, addChatMessage]);
 
+  const saveStory = useCallback(async (title: string, prompt: string): Promise<string | null> => {
+    if (!storyState || !decisionTree) {
+      console.error('Cannot save story: missing story state or decision tree');
+      addChatMessage('Cannot save story: no story in progress.', true);
+      return null;
+    }
+
+    try {
+      // Convert decisions to a simpler format for storage
+      const decisionsForStorage = storyState.decisions.map((d, index) => ({
+        id: d.id,
+        text: d.text,
+        timestamp: d.timestamp,
+        depth: index + 1
+      }));
+
+      const storyId = await saveStoryMutation({
+        title,
+        prompt,
+        fullHistory: storyState.fullHistory,
+        decisions: decisionsForStorage,
+        decisionTree: decisionTree as any, // Store the full tree
+      });
+
+      addChatMessage(`Story "${title}" saved successfully!`, true);
+      return storyId;
+    } catch (error) {
+      console.error('Error saving story:', error);
+      addChatMessage(`Failed to save story: ${error instanceof Error ? error.message : 'Unknown error'}`, true);
+      return null;
+    }
+  }, [storyState, decisionTree, saveStoryMutation, addChatMessage]);
+
+  // Effect to handle loading story when loadedStory changes
+  useEffect(() => {
+    if (!loadedStory || !storyIdToLoad) return;
+
+    try {
+      // Reconstruct the story state from saved data
+      const restoredStoryState: StoryState = {
+        currentStory: loadedStory.fullHistory[loadedStory.fullHistory.length - 1] || '',
+        fullHistory: loadedStory.fullHistory,
+        decisions: loadedStory.decisions.map((d: any, index: number) => ({
+          id: d.id,
+          text: d.text,
+          timestamp: d.timestamp,
+          storyState: {
+            currentStory: loadedStory.fullHistory[index] || '',
+            fullHistory: loadedStory.fullHistory.slice(0, index + 1),
+            decisions: loadedStory.decisions.slice(0, index).map((prevD: any) => ({
+              id: prevD.id,
+              text: prevD.text,
+              timestamp: prevD.timestamp,
+              storyState: {} as StoryState
+            })) as Decision[],
+            depth: index
+          }
+        })) as Decision[],
+        depth: loadedStory.decisions.length,
+      };
+
+      // Restore the decision tree
+      const restoredTree = loadedStory.decisionTree as TreeNode;
+
+      // Set the restored state
+      setStoryState(restoredStoryState);
+      setDecisionTree(restoredTree);
+      setInitialPrompt(loadedStory.prompt);
+      setPhase('story');
+      setChatMessages([]);
+      setEndingImage(null);
+      stopUnsettlingComments();
+
+      // Clear the storyIdToLoad so we don't reload it
+      setStoryIdToLoad(null);
+
+      addChatMessage(`Story "${loadedStory.title}" loaded successfully!`, true);
+    } catch (error) {
+      console.error('Error restoring story:', error);
+      addChatMessage(`Failed to restore story: ${error instanceof Error ? error.message : 'Unknown error'}`, true);
+      setStoryIdToLoad(null);
+    }
+  }, [loadedStory, storyIdToLoad, stopUnsettlingComments, addChatMessage]);
+
+  const loadStory = useCallback(async (storyId: string) => {
+    setStoryIdToLoad(storyId);
+    addChatMessage('Loading story...', true);
+  }, [addChatMessage]);
+
   // Ensure value is always defined and stable
   const value: GameContextType = useMemo(() => ({
     phase,
@@ -341,14 +445,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     endingImage,
     isGeneratingImage,
     testImage,
+    initialPrompt,
     setPhase,
     startStory,
     makeDecision,
     endStory,
     replayFromNode,
     generateTestImage,
-    addChatMessage
-  }), [phase, storyState, chatMessages, decisionTree, endingImage, isGeneratingImage, testImage, setPhase, startStory, makeDecision, endStory, replayFromNode, generateTestImage, addChatMessage]);
+    addChatMessage,
+    saveStory,
+    loadStory
+  }), [phase, storyState, chatMessages, decisionTree, endingImage, isGeneratingImage, testImage, initialPrompt, setPhase, startStory, makeDecision, endStory, replayFromNode, generateTestImage, addChatMessage, saveStory, loadStory]);
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

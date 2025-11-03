@@ -49,6 +49,15 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
     }
   }, [storyState?.currentStory, isGeneratingDecisions, setDecisions]);
 
+  // Reset refs when phase changes to 'story' (especially when coming from 'ending' phase)
+  useEffect(() => {
+    if (phase === 'story') {
+      // Clear refs when entering story phase to ensure replay is recognized as new
+      lastStoryRef.current = '';
+      lastAudioUrlRef.current = null;
+    }
+  }, [phase]);
+
   useEffect(() => {
     if (!storyState) return;
 
@@ -56,11 +65,7 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
     const audioUrl = storyState.audioUrl;
     
     if (!storyText) return;
-    if (!audioUrl) {
-      console.log('Waiting for audio URL...');
-      return; // Wait for audio to be ready
-    }
-
+    
     // Check if this is a new segment
     const isNewSegment = storyText !== lastStoryRef.current || audioUrl !== lastAudioUrlRef.current;
     
@@ -75,6 +80,66 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
     if (!isNewSegment) {
       console.log('Same segment, skipping');
       return; // Same segment, don't re-play
+    }
+
+    // If no audioUrl, show text word-by-word without audio synchronization
+    if (!audioUrl) {
+      console.log('No audio URL, displaying text word-by-word');
+      // Clean up previous state
+      wordTimersRef.current.forEach(timer => clearTimeout(timer));
+      wordTimersRef.current = [];
+      if (audioRef.current) {
+        if (timeUpdateHandlerRef.current) {
+          audioRef.current.removeEventListener('timeupdate', timeUpdateHandlerRef.current);
+          timeUpdateHandlerRef.current = null;
+        }
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+
+      // Reset for fresh segment
+      setDisplayedText('');
+      setIsStreaming(true);
+      setDoorsVisible(false);
+      setDoorsOpen(false);
+      setDecisions([]);
+      setFullyOpenDoor(null);
+      lastStoryRef.current = storyText;
+      lastAudioUrlRef.current = null;
+
+      // Split text into words (preserving whitespace and newlines)
+      const words = storyText.split(/(\s+|\n)/).filter(word => word.length > 0);
+      
+      // Display text word by word without audio sync
+      let displayedIndex = 0;
+      const displayNextWord = () => {
+        if (displayedIndex < words.length) {
+          // Show text up to and including current word
+          let textToShow = '';
+          for (let i = 0; i <= displayedIndex; i++) {
+            textToShow += words[i];
+          }
+          setDisplayedText(textToShow);
+          displayedIndex++;
+          
+          // Continue with next word
+          const timer = setTimeout(displayNextWord, 100); // 100ms per word
+          wordTimersRef.current.push(timer);
+        } else {
+          // All words displayed
+          setIsStreaming(false);
+          setTimeout(() => {
+            setDoorsVisible(true);
+            setTimeout(() => {
+              setDoorsOpen(true);
+              generateDecisionOptions();
+            }, 300);
+          }, 400);
+        }
+      };
+      
+      displayNextWord();
+      return;
     }
 
     // If we're fading, wait for fade to complete before processing new content

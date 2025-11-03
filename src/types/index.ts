@@ -32,6 +32,23 @@ export interface ChatMessage {
   isSystem: boolean;
 }
 
+export interface SavedStory {
+  _id: string;
+  _creationTime: number;
+  title: string;
+  prompt: string;
+  fullHistory: string[];
+  decisions: Array<{
+    id: string;
+    text: string;
+    timestamp: number;
+    depth: number;
+  }>;
+  decisionTree: TreeNode;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface GameContextType {
   phase: GamePhase;
   storyState: StoryState | null;
@@ -40,6 +57,7 @@ export interface GameContextType {
   endingImage: string | null;
   isGeneratingImage: boolean;
   testImage: string | null;
+  initialPrompt: string;
   setPhase: (phase: GamePhase) => void;
   startStory: (prompt: string) => void;
   makeDecision: (decisionText: string, availableOptions?: string[]) => void;
@@ -47,4 +65,6 @@ export interface GameContextType {
   replayFromNode: (nodeId: string) => void;
   generateTestImage: () => Promise<void>;
   addChatMessage: (text: string, isSystem?: boolean) => void;
+  saveStory: (title: string, initialPrompt: string) => Promise<string | null>;
+  loadStory: (storyId: string) => Promise<void>;
 }
