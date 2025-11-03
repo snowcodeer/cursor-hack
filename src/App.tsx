@@ -1,25 +1,43 @@
-import React from 'react';
-import logo from './logo.svg';
+import { useState } from 'react';
+import { GameProvider, useGame } from './contexts/GameContext';
+import LandingPage from './components/LandingPage';
+import StoryView from './components/StoryView';
+import ChatBox from './components/ChatBox';
+import EndingView from './components/EndingView';
 import './App.css';
+
+function AppContent() {
+  const { phase } = useGame();
+  const [fullyOpenDoor, setFullyOpenDoor] = useState<number | null>(null);
+  const [decisions, setDecisions] = useState<string[]>([]);
+
+  return (
+    <div className="App">
+      {phase === 'landing' && <LandingPage />}
+      {phase === 'story' && (
+        <>
+          <StoryView 
+            fullyOpenDoor={fullyOpenDoor}
+            setFullyOpenDoor={setFullyOpenDoor}
+            decisions={decisions}
+            setDecisions={setDecisions}
+          />
+          <ChatBox 
+            onInputMatch={setFullyOpenDoor}
+            decisions={decisions}
+          />
+        </>
+      )}
+      {phase === 'ending' && <EndingView />}
+    </div>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <GameProvider>
+      <AppContent />
+    </GameProvider>
   );
 }
 
