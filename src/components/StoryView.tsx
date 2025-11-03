@@ -13,7 +13,8 @@ interface StoryViewProps {
 }
 
 export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, setDecisions }: StoryViewProps) {
-  const { storyState, makeDecision } = useGame();
+  const { storyState, makeDecision, phase, isGeneratingImage, testImage } = useGame();
+  const [showImageModal, setShowImageModal] = useState(false);
   const [displayedText, setDisplayedText] = useState('');
   const [isStreaming, setIsStreaming] = useState(true);
   const [doorsVisible, setDoorsVisible] = useState(false);
@@ -21,6 +22,7 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
   const [isGeneratingDecisions, setIsGeneratingDecisions] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [isFading, setIsFading] = useState(false);
+  const [isFadingOut, setIsFadingOut] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const wordTimersRef = useRef<number[]>([]);
@@ -273,10 +275,13 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
       return;
     }
     
+    // Pass available options to makeDecision so they can be stored in the tree
+    const availableOptions = decisions.filter(d => d !== 'Make your own decision');
+    
     // Start generation immediately - don't await, let it run in background
     // Door opening animation (2s) provides visual buffer while generation happens
     console.log('Starting makeDecision (generation begins immediately)...');
-    makeDecision(decision).catch(error => {
+    makeDecision(decision, availableOptions).catch(error => {
       console.error('Error making decision:', error);
     });
     // Don't reset doors immediately - let the door stay open
@@ -297,6 +302,20 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
     }
   }, [fullyOpenDoor, isFading]);
 
+  // Trigger fade-out when endStory is called (detect via isGeneratingImage becoming true)
+  useEffect(() => {
+    if (isGeneratingImage && phase === 'story' && !isFadingOut) {
+      setIsFadingOut(true);
+    }
+  }, [isGeneratingImage, phase]);
+
+  // Show image modal when test image is generated
+  useEffect(() => {
+    if (testImage) {
+      setShowImageModal(true);
+    }
+  }, [testImage]);
+
   if (!storyState) {
     return null;
   }
@@ -306,13 +325,41 @@ export default function StoryView({ fullyOpenDoor, setFullyOpenDoor, decisions, 
   const words = displayedText.split(/(\s+|\n)/).filter(word => word.length > 0);
   
   return (
-    <div className={`story-view ${isFading ? 'fading' : ''}`}>
+    <div className={`story-view ${isFading ? 'fading' : ''} ${isFadingOut ? 'fading-out' : ''}`}>
       {isFading && <div className="fade-overlay"></div>}
+      {isFadingOut && (
+        <>
+          <div className="fade-overlay fade-out"></div>
+          {isGeneratingImage && (
+            <div className="ending-loading-overlay">
+              <div className="loading-spinner"></div>
+              <p className="loading-text">Generating your story ending...</p>
+            </div>
+          )}
+        </>
+      )}
       <button className="history-button" onClick={() => setShowHistory(true)} title="View Story History">
         📜
       </button>
       
       {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}
+      
+      {/* Test Image Modal */}
+      {showImageModal && testImage && (
+        <div className="image-modal-overlay" onClick={() => setShowImageModal(false)}>
+          <div className="image-modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="image-modal-close" onClick={() => setShowImageModal(false)}>×</button>
+            {isGeneratingImage ? (
+              <div className="image-modal-loading">
+                <div className="loading-spinner"></div>
+                <p>Generating image...</p>
+              </div>
+            ) : (
+              <img src={testImage} alt="Generated test image" className="test-image" />
+            )}
+          </div>
+        </div>
+      )}
       
       <div className="story-content">
         <div ref={textRef} className="story-text">

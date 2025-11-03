@@ -34,37 +34,45 @@ npm install
 ```env
 VITE_OPENAI_API_KEY=your_openai_api_key_here
 VITE_ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
-VITE_GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-3. Start the development server:
+**Note**: The `GEMINI_API_KEY` is used server-side (no `VITE_` prefix) to avoid exposing it in the frontend. The backend server proxies Gemini API requests to avoid CORS issues.
+
+3. Start the development servers:
 ```bash
-npm run dev
+# Option 1: Run both frontend and backend together
+npm run dev:all
+
+# Option 2: Run them separately in different terminals
+npm run dev:server  # Terminal 1: Backend server (port 3001)
+npm run dev          # Terminal 2: Frontend (port 5173)
 ```
 
-4. Open your browser to the URL shown (typically `http://localhost:5173`)
+4. Open your browser to `http://localhost:5173`
 
 ## Project Structure
 
 ```
-src/
-├── components/          # React components
-│   ├── LandingPage.tsx  # Landing page with Random/Custom buttons
-│   ├── StoryView.tsx    # Main story display with doors
-│   ├── Door.tsx         # Individual door component
-│   ├── ChatBox.tsx      # Chat input and unsettling messages
-│   └── EndingView.tsx   # Ending image and decision tree
-├── services/            # API integrations
-│   ├── openaiService.ts # OpenAI GPT-4 Turbo
-│   ├── elevenlabsService.ts # ElevenLabs TTS/STT
-│   └── geminiService.ts # Gemini Imagen
-├── contexts/            # React Context
-│   └── GameContext.tsx  # Global game state
-├── utils/               # Utility functions
-│   ├── decisionTree.ts  # Decision tree management
-│   └── animations.ts    # Animation helpers
-└── types/               # TypeScript types
-    └── index.ts         # Type definitions
+├── server.js            # Express backend server (proxies Gemini API)
+├── src/
+│   ├── components/          # React components
+│   │   ├── LandingPage.tsx  # Landing page with Random/Custom buttons
+│   │   ├── StoryView.tsx    # Main story display with doors
+│   │   ├── Door.tsx         # Individual door component
+│   │   ├── ChatBox.tsx      # Chat input and unsettling messages
+│   │   └── EndingView.tsx   # Ending image and decision tree
+│   ├── services/            # API integrations
+│   │   ├── openaiService.ts # OpenAI GPT-4 Turbo
+│   │   ├── elevenlabsService.ts # ElevenLabs TTS/STT
+│   │   └── geminiService.ts # Gemini Imagen (calls backend proxy)
+│   ├── contexts/            # React Context
+│   │   └── GameContext.tsx  # Global game state
+│   ├── utils/               # Utility functions
+│   │   ├── decisionTree.ts  # Decision tree management
+│   │   └── animations.ts    # Animation helpers
+│   └── types/               # TypeScript types
+│       └── index.ts         # Type definitions
 ```
 
 ## Usage
@@ -99,6 +107,8 @@ The built files will be in the `dist` directory.
 - Speech recognition requires a browser that supports Web Speech API (Chrome, Edge, Safari)
 - API keys should never be committed to version control
 - The app uses environment variables prefixed with `VITE_` for client-side access
+- `GEMINI_API_KEY` is used server-side only (no `VITE_` prefix) for security
+- The backend server (port 3001) is required to proxy Gemini API calls and avoid CORS issues
 - Some API features may require paid plans (GPT-4 Turbo, ElevenLabs, Gemini Imagen)
 
 ## License

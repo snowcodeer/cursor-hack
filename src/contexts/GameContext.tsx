@@ -1,13 +1,31 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
 import { GamePhase, StoryState, Decision, TreeNode, ChatMessage, GameContextType } from '../types';
-import { generateStory, generateDecisions, generateUnsettlingComment, generateStorySummary } from '../services/openaiService';
-import { generateImage } from '../services/geminiService';
+import { generateStory, generateDecisions, generateUnsettlingComment } from '../services/openaiService';
 import { generateAudioBlob } from '../services/elevenlabsService';
+import { generateImage, imageToDataUrl } from '../services/geminiService';
 import { createTreeRoot, buildTreeFromDecisions, findNodeById } from '../utils/decisionTree';
 
 const NARRATOR_VOICE_ID = 'goT3UYdM9bhm0n2lmKQx';
 
-const GameContext = createContext<GameContextType | null>(null);
+// Create a default context value to prevent null issues
+const defaultContextValue: GameContextType = {
+  phase: 'landing',
+  storyState: null,
+  chatMessages: [],
+  decisionTree: null,
+  endingImage: null,
+  isGeneratingImage: false,
+  testImage: null,
+  setPhase: () => {},
+  startStory: async () => {},
+  makeDecision: async () => {},
+  endStory: async () => {},
+  replayFromNode: () => {},
+  generateTestImage: async () => {},
+  addChatMessage: () => {}
+};
+
+const GameContext = createContext<GameContextType>(defaultContextValue);
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<GamePhase>('landing');
@@ -15,6 +33,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [decisionTree, setDecisionTree] = useState<TreeNode | null>(null);
   const [endingImage, setEndingImage] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [testImage, setTestImage] = useState<string | null>(null);
   
   const unsettlingCommentIntervalRef = useRef<number | null>(null);
   const lastUnsettlingTimeRef = useRef<number>(0);
@@ -124,14 +144,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [addChatMessage, startUnsettlingComments, stopUnsettlingComments]);
 
-  const makeDecision = useCallback(async (decisionText: string) => {
+  const makeDecision = useCallback(async (decisionText: string, availableOptions?: string[]) => {
     if (!storyState) return;
+
+    // Store available options in the storyState before creating the decision
+    // This ensures they're available when building the tree
+    const storyStateWithOptions = {
+      ...storyState,
+      availableOptions: availableOptions || []
+    };
 
     const decision: Decision = {
       id: `decision-${Date.now()}`,
       text: decisionText,
       timestamp: Date.now(),
-      storyState: { ...storyState }
+      storyState: storyStateWithOptions // Include available options in decision's storyState
     };
 
     const newDecisions = [...storyState.decisions, decision];
@@ -169,13 +196,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         fullHistory: newHistory, // Keep full history
         decisions: newDecisions,
         depth: storyState.depth + 1,
-        audioUrl
+        audioUrl,
+        availableOptions: availableOptions || [] // Store available options for this decision point
+      };
+
+      // Store available options in the previous story state for tree building
+      const previousStoryStateWithOptions = {
+        ...storyState,
+        availableOptions: availableOptions || []
       };
 
       setStoryState(newStoryState);
 
-      // Update decision tree
-      const updatedTree = buildTreeFromDecisions(newDecisions, newHistory);
+      // Update decision tree with all available options
+      const updatedTree = buildTreeFromDecisions(newDecisions, newHistory, previousStoryStateWithOptions);
       setDecisionTree(updatedTree);
 
       // Restart unsettling comments with new context
@@ -189,73 +223,142 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [storyState, addChatMessage, startUnsettlingComments]);
 
   const endStory = useCallback(async () => {
-    if (!storyState) return;
-
-    stopUnsettlingComments();
-    setPhase('ending');
+    if (!storyState) {
+      console.warn('Cannot end story: no story state');
+      return;
+    }
 
     try {
-      // Generate ending image using Gemini
-      // Use full story history for better context
-      const fullStoryText = storyState.fullHistory.join('\n\n');
-      const decisionTexts = storyState.decisions.map(d => d.text);
+    stopUnsettlingComments();
       
-      console.log('Generating ending image with Gemini...');
-      const summary = await generateStorySummary(
-        fullStoryText,
-        decisionTexts
-      );
-      console.log('Image prompt:', summary);
+      // Skip image generation - just show the decision tree
+      setEndingImage(null);
+      setIsGeneratingImage(false);
+      
+      // Wait for fade-out animation, then change phase
+      setTimeout(() => {
+        try {
+          setPhase('ending');
+        } catch (error) {
+          console.error('Error setting phase to ending:', error);
+        }
+      }, 1000); // Match fade-out duration
 
-      const imageData = await generateImage(summary);
-      setEndingImage(imageData);
-      console.log('Ending image generated successfully');
-
-      // Decision tree is already built and stored
+      // Decision tree is already built and stored - just show it
+      console.log('Story ended - showing decision tree');
     } catch (error) {
       console.error('Error ending story:', error);
-      addChatMessage('Failed to generate ending. Showing decision tree.', true);
+      setIsGeneratingImage(false);
+      try {
       setPhase('ending');
+      } catch (setError) {
+        console.error('Error setting error state:', setError);
+      }
     }
-  }, [storyState, stopUnsettlingComments, addChatMessage]);
+  }, [storyState, stopUnsettlingComments, setPhase]);
 
   const replayFromNode = useCallback((nodeId: string) => {
-    if (!decisionTree) return;
+    if (!decisionTree) {
+      console.error('Cannot replay: no decision tree');
+      return;
+    }
 
+    console.log('Replaying from node:', nodeId);
     const node = findNodeById(decisionTree, nodeId);
-    if (!node) return;
+    
+    if (!node) {
+      console.error('Node not found:', nodeId);
+      return;
+    }
 
+    if (!node.storyState) {
+      console.error('Node has no storyState:', node);
+      return;
+    }
+
+    console.log('Replaying story from node:', {
+      id: node.id,
+      depth: node.storyState.depth,
+      storyPreview: node.storyState.currentStory?.substring(0, 100),
+      decisionsCount: node.storyState.decisions.length
+    });
+
+    // Set the story state to this node's state
     setStoryState(node.storyState);
+    // Keep the full decision tree
     setDecisionTree(decisionTree);
+    // Switch back to story phase
     setPhase('story');
     setEndingImage(null);
     stopUnsettlingComments();
 
-    // Restart unsettling comments
+    // Restart unsettling comments with the current story
+    if (node.storyState.currentStory) {
     startUnsettlingComments(node.storyState.currentStory);
+    }
   }, [decisionTree, startUnsettlingComments, stopUnsettlingComments]);
 
-  const value: GameContextType = {
+  const generateTestImage = useCallback(async () => {
+    if (!storyState) {
+      console.warn('Cannot generate test image: no story state');
+      addChatMessage('No story available to generate image from.', true);
+      return;
+    }
+
+    try {
+      setIsGeneratingImage(true);
+      setTestImage(null);
+      addChatMessage('Generating test image...', true);
+
+      // Create a prompt based on the current story
+      const fullStory = storyState.fullHistory.join('\n\n') || storyState.currentStory;
+      const prompt = `Create a visual representation of this story: ${fullStory.substring(0, 500)}`;
+
+      console.log('Generating test image with prompt:', prompt.substring(0, 100));
+      
+      const imageData = await generateImage(prompt);
+      console.log('Image generated, converting to data URL...');
+      
+      const dataUrl = imageToDataUrl(imageData);
+      console.log('Data URL created, length:', dataUrl.length);
+      
+      setTestImage(dataUrl);
+      setIsGeneratingImage(false);
+      addChatMessage('Test image generated!', true);
+    } catch (error) {
+      console.error('Error generating test image:', error);
+      setIsGeneratingImage(false);
+      addChatMessage(`Failed to generate test image: ${error instanceof Error ? error.message : 'Unknown error'}`, true);
+    }
+  }, [storyState, addChatMessage]);
+
+  // Ensure value is always defined and stable
+  const value: GameContextType = useMemo(() => ({
     phase,
     storyState,
     chatMessages,
     decisionTree,
     endingImage,
+    isGeneratingImage,
+    testImage,
     setPhase,
     startStory,
     makeDecision,
     endStory,
     replayFromNode,
+    generateTestImage,
     addChatMessage
-  };
+  }), [phase, storyState, chatMessages, decisionTree, endingImage, isGeneratingImage, testImage, setPhase, startStory, makeDecision, endStory, replayFromNode, generateTestImage, addChatMessage]);
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
 
 export function useGame() {
   const context = useContext(GameContext);
+  // Context should always be defined now, but keep check for safety
   if (!context) {
-    throw new Error('useGame must be used within GameProvider');
+    console.error('useGame called outside GameProvider, using default context');
+    return defaultContextValue;
   }
   return context;
 }
