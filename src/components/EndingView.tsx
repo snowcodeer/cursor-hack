@@ -12,7 +12,8 @@ export default function EndingView() {
   const treeContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (endingImage && showImage) {
+    if (endingImage) {
+      // When ending image is set, show image first, hide tree
       setShowImage(true);
       setShowTree(false);
     }
@@ -26,6 +27,7 @@ export default function EndingView() {
 
   const handleCloseImage = () => {
     setShowImage(false);
+    // Wait for fade out animation, then show tree
     setTimeout(() => {
       setShowTree(true);
     }, 500);
@@ -89,37 +91,86 @@ export default function EndingView() {
         .attr('r', 12)
         .attr('fill', '#ffcccc');
 
-      // Show tooltip
+      // Show tooltip with more details
+      const storyState = d.data.storyState || {};
+      const storyText = storyState.currentStory || '';
+      const decisionText = d.data.decision ? d.data.decision.text : 'Story Start';
+      const truncatedStory = storyText.length > 100 ? storyText.substring(0, 100) + '...' : storyText;
+      
+      // Calculate tooltip size based on content
+      const tooltipWidth = 300;
+      const tooltipHeight = d.data.decision ? 120 : 100;
+      
       const tooltip = svg.append('g')
         .attr('class', 'tooltip')
-        .attr('transform', `translate(${d.y},${d.x - 30})`);
+        .attr('transform', `translate(${d.y},${d.x - tooltipHeight / 2})`);
 
       tooltip.append('rect')
-        .attr('x', -100)
-        .attr('y', -30)
-        .attr('width', 200)
-        .attr('height', 60)
-        .attr('fill', 'rgba(0, 0, 0, 0.9)')
+        .attr('x', -tooltipWidth / 2)
+        .attr('y', -tooltipHeight / 2)
+        .attr('width', tooltipWidth)
+        .attr('height', tooltipHeight)
+        .attr('fill', 'rgba(0, 0, 0, 0.95)')
         .attr('stroke', '#ffffff')
-        .attr('rx', 5);
+        .attr('stroke-width', 2)
+        .attr('rx', 8);
 
-      const decisionText = d.data.decision ? d.data.decision.text : 'Story Start';
-      const truncatedText = decisionText.length > 40 ? decisionText.substring(0, 40) + '...' : decisionText;
-
+      // Decision text
       tooltip.append('text')
         .attr('text-anchor', 'middle')
         .attr('fill', '#ffffff')
-        .attr('font-size', '12px')
-        .attr('dy', -10)
-        .text(truncatedText);
+        .attr('font-size', '14px')
+        .attr('font-weight', 'bold')
+        .attr('dy', -tooltipHeight / 2 + 25)
+        .text(decisionText);
 
+      // Story snippet
+      if (storyText) {
+        tooltip.append('text')
+          .attr('text-anchor', 'middle')
+          .attr('fill', 'rgba(255, 255, 255, 0.8)')
+          .attr('font-size', '11px')
+          .attr('dy', -tooltipHeight / 2 + 50)
+          .attr('x', 0)
+          .call((text: any) => {
+            const words = truncatedStory.split(' ');
+            let line = '';
+            let lineNumber = 0;
+            words.forEach((word: string) => {
+              const testLine = line + word + ' ';
+              if (testLine.length > 35 && line) {
+                text.append('tspan')
+                  .attr('x', 0)
+                  .attr('dy', lineNumber === 0 ? '0' : '14')
+                  .text(line);
+                line = word + ' ';
+                lineNumber++;
+              } else {
+                line = testLine;
+              }
+            });
+            text.append('tspan')
+              .attr('x', 0)
+              .attr('dy', lineNumber === 0 ? '0' : '14')
+              .text(line.trim());
+          });
+      }
+
+      // Depth info
       if (d.data.decision) {
         tooltip.append('text')
           .attr('text-anchor', 'middle')
-          .attr('fill', 'rgba(255, 255, 255, 0.7)')
+          .attr('fill', 'rgba(255, 255, 255, 0.6)')
           .attr('font-size', '10px')
-          .attr('dy', 10)
-          .text(`Depth: ${d.data.depth}`);
+          .attr('dy', tooltipHeight / 2 - 15)
+          .text(`Step ${d.data.depth} • Click to replay`);
+      } else {
+        tooltip.append('text')
+          .attr('text-anchor', 'middle')
+          .attr('fill', 'rgba(255, 255, 255, 0.6)')
+          .attr('font-size', '10px')
+          .attr('dy', tooltipHeight / 2 - 15)
+          .text('Story Beginning');
       }
     })
     .on('mouseleave', function() {
@@ -154,6 +205,7 @@ export default function EndingView() {
     id: string;
     decision: any;
     depth: number;
+    storyState?: any;
     children?: TreeNodeData[];
   }
 

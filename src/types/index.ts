@@ -12,6 +12,7 @@ export interface StoryState {
   fullHistory: string[];
   decisions: Decision[];
   depth: number;
+  audioUrl?: string; // URL to audio blob for this story segment
 }
 
 export interface TreeNode {

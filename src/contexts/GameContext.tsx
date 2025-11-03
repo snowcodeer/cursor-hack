@@ -2,7 +2,10 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { GamePhase, StoryState, Decision, TreeNode, ChatMessage, GameContextType } from '../types';
 import { generateStory, generateDecisions, generateUnsettlingComment, generateStorySummary } from '../services/openaiService';
 import { generateImage } from '../services/geminiService';
+import { generateAudioBlob } from '../services/elevenlabsService';
 import { createTreeRoot, buildTreeFromDecisions, findNodeById } from '../utils/decisionTree';
+
+const NARRATOR_VOICE_ID = 'goT3UYdM9bhm0n2lmKQx';
 
 const GameContext = createContext<GameContextType | null>(null);
 
@@ -15,6 +18,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   
   const unsettlingCommentIntervalRef = useRef<number | null>(null);
   const lastUnsettlingTimeRef = useRef<number>(0);
+  const previousAudioUrlRef = useRef<string | null>(null);
 
   const addChatMessage = useCallback((text: string, isSystem: boolean = false) => {
     const message: ChatMessage = {
@@ -74,17 +78,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       let fullStoryText = '';
       const storyHistory: string[] = [];
 
-      // Stream the initial story
+      // Wait for full story text first (don't stream to UI)
       for await (const chunk of generateStory(prompt)) {
         fullStoryText += chunk;
-        setStoryState(prev => prev ? {
-          ...prev,
-          currentStory: fullStoryText,
-          fullHistory: [fullStoryText]
-        } : null);
       }
 
       storyHistory.push(fullStoryText);
+
+      // Clean up previous audio URL
+      if (previousAudioUrlRef.current) {
+        URL.revokeObjectURL(previousAudioUrlRef.current);
+      }
+
+      // Generate audio for the full text
+      const audioBlob = await generateAudioBlob(fullStoryText.trim(), NARRATOR_VOICE_ID);
+      const audioUrl = URL.createObjectURL(audioBlob);
+      previousAudioUrlRef.current = audioUrl;
+
+      // Now set state with both text and audio
+      setStoryState({
+        currentStory: fullStoryText,
+        fullHistory: [fullStoryText],
+        decisions: [],
+        depth: 0,
+        audioUrl
+      });
 
       // Update tree root with initial story
       setDecisionTree(prev => prev ? {
@@ -93,7 +111,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           currentStory: fullStoryText,
           fullHistory: [fullStoryText],
           decisions: [],
-          depth: 0
+          depth: 0,
+          audioUrl
         }
       } : null);
 
@@ -119,18 +138,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const currentStoryText = storyState.currentStory;
 
     try {
-      // Generate new segment based on decision - fresh text, not continuation
+      // Generate new segment based on decision - start immediately
+      // This runs in background while door opens
       let newSegment = '';
       const prompt = `The character chose: ${decisionText}. Continue the story from this decision.`;
       
+      console.log('Starting story generation...');
       for await (const chunk of generateStory(prompt, currentStoryText)) {
         newSegment += chunk;
-        // Update only the current segment being displayed (fresh text)
-        setStoryState(prev => prev ? {
-          ...prev,
-          currentStory: newSegment, // Replace, don't append
-        } : null);
       }
+      console.log('Story generation complete, length:', newSegment.length);
+
+      // Clean up previous audio URL
+      if (previousAudioUrlRef.current) {
+        URL.revokeObjectURL(previousAudioUrlRef.current);
+      }
+
+      // Generate audio for the new segment - runs after story is ready
+      console.log('Starting audio generation...');
+      const audioBlob = await generateAudioBlob(newSegment.trim(), NARRATOR_VOICE_ID);
+      const audioUrl = URL.createObjectURL(audioBlob);
+      previousAudioUrlRef.current = audioUrl;
+      console.log('Audio generation complete');
 
       // Full history is still tracked for the history view
       const newHistory = [...storyState.fullHistory, currentStoryText, newSegment];
@@ -139,7 +168,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         currentStory: newSegment, // Fresh segment only
         fullHistory: newHistory, // Keep full history
         decisions: newDecisions,
-        depth: storyState.depth + 1
+        depth: storyState.depth + 1,
+        audioUrl
       };
 
       setStoryState(newStoryState);
@@ -165,15 +195,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPhase('ending');
 
     try {
-      // Generate ending image
+      // Generate ending image using Gemini
+      // Use full story history for better context
+      const fullStoryText = storyState.fullHistory.join('\n\n');
       const decisionTexts = storyState.decisions.map(d => d.text);
+      
+      console.log('Generating ending image with Gemini...');
       const summary = await generateStorySummary(
-        storyState.currentStory,
+        fullStoryText,
         decisionTexts
       );
+      console.log('Image prompt:', summary);
 
       const imageData = await generateImage(summary);
       setEndingImage(imageData);
+      console.log('Ending image generated successfully');
 
       // Decision tree is already built and stored
     } catch (error) {

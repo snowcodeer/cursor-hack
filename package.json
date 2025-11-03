@@ -9,10 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^9.88.0",
+    "@react-three/fiber": "^8.15.0",
+    "@types/d3": "^7.4.3",
+    "convex": "^1.28.2",
+    "d3": "^7.8.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "d3": "^7.8.5",
-    "@types/d3": "^7.4.3"
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
